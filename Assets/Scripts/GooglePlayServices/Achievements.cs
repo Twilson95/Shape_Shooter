@@ -1,29 +1,40 @@
 using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
-using GooglePlayGames;
-using UnityEngine.SocialPlatforms;
 using System.Linq;
+using System.Reflection;
+using UnityEngine;
+using UnityEngine.SocialPlatforms;
 
 public class Achievements : MonoBehaviour
 {
-    // Start is called before the first frame update
+    private object playGamesPlatformInstance;
+    private MethodInfo incrementAchievementMethod;
+
     void Start()
     {
- 
+        CachePlayGamesPlatformApi();
     }
 
-    
+    private void CachePlayGamesPlatformApi()
+    {
+        Type playGamesPlatformType = Type.GetType("GooglePlayGames.PlayGamesPlatform, GooglePlayGames");
+        if (playGamesPlatformType == null)
+        {
+            return;
+        }
+
+        PropertyInfo instanceProperty = playGamesPlatformType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
+        playGamesPlatformInstance = instanceProperty?.GetValue(null);
+        incrementAchievementMethod = playGamesPlatformType.GetMethod("IncrementAchievement", new[] { typeof(string), typeof(int), typeof(System.Action<bool>) });
+    }
+
     public IEnumerator WaitAndUnlock(string achievementID)
     {
         yield return new WaitForSeconds(2f);
         UnlockAchievement(achievementID);
     }
 
-
     public void IncrementAchievement(string achievementID)
     {
-        // load achievements
         Social.LoadAchievements(achievements =>
         {
             if (achievements == null)
@@ -31,24 +42,27 @@ public class Achievements : MonoBehaviour
                 Debug.Log("no achievements loaded");
                 return;
             }
-            // find the specified achievement
-            var achievement = achievements.FirstOrDefault(a => a.id == achievementID);
 
-            // check if the achievement is unlocked
+            var achievement = achievements.FirstOrDefault(a => a.id == achievementID);
             if (achievement == null || achievement.completed)
             {
                 Debug.Log("incremental achievement already unlocked");
                 return;
             }
-            // increment the achievement
-            PlayGamesPlatform.Instance.IncrementAchievement(
-                achievementID,
-                1,
-                success =>
+
+            if (playGamesPlatformInstance != null && incrementAchievementMethod != null)
+            {
+                incrementAchievementMethod.Invoke(playGamesPlatformInstance, new object[]
                 {
-                    // handle success or failure
-                }
-            );
+                    achievementID,
+                    1,
+                    new System.Action<bool>(_ => { })
+                });
+                return;
+            }
+
+            Debug.LogWarning("IncrementAchievement API is unavailable. Falling back to full unlock progress.");
+            Social.ReportProgress(achievementID, 100.0f, _ => { });
         });
     }
 
@@ -56,26 +70,22 @@ public class Achievements : MonoBehaviour
     {
         if (Social.localUser.authenticated)
         {
-            // The local user is already authenticated
             Debug.Log("The local user is already authenticated.");
             UnlockAchievement(achievementID);
             return;
         }
 
-        // Authenticate the local user
-        Social.localUser.Authenticate(success => {
+        Social.localUser.Authenticate(success =>
+        {
             if (success)
             {
-                // Check which Weapons have been purchased and verify the achievement
                 UnlockAchievement(achievementID);
             }
         });
     }
 
-
     public void UnlockAchievement(string achievementID)
     {
-        // load achievements
         Social.LoadAchievements(achievements =>
         {
             if (achievements == null)
@@ -83,30 +93,21 @@ public class Achievements : MonoBehaviour
                 Debug.Log("no achievements loaded");
                 return;
             }
-            // find the specified achievement
-            var achievement = achievements.FirstOrDefault(a => a.id == achievementID);
 
-            // check if the achievement is unlocked
+            var achievement = achievements.FirstOrDefault(a => a.id == achievementID);
             if (achievement == null || achievement.completed)
             {
                 Debug.Log("one off achievement already unlocked");
                 return;
             }
-            // unlock achievement (achievement ID "Cfjewijawiu_QA")
-            Social.ReportProgress(achievementID, 100.0f, (bool success) =>
-            {
-                // handle success or failure
-            }
-            );
+
+            Social.ReportProgress(achievementID, 100.0f, _ => { });
         });
     }
 
-
     public void ShowAchievements()
     {
-        // show achievements UI
         Debug.Log("Show Achievements");
         Social.ShowAchievementsUI();
     }
-
 }
