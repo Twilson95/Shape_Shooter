@@ -1,15 +1,16 @@
-using UnityEngine;
-using UnityEngine.UI;
-using System.Collections;
-using System.Collections.Generic;
 using System;
 using TMPro;
-using System.Threading.Tasks;
+using Unity.Services.LevelPlay;
+using UnityEngine;
+using UnityEngine.UI;
 
-// Example for IronSource Unity.
 public class AdHandler : MonoBehaviour
 {
-    private string ironSourceAppKey = "19e2c854d";
+    [SerializeField] private string appKey = "19e2c854d";
+    [SerializeField] private string rewardedAdUnitId = "";
+    [SerializeField] private string interstitialAdUnitId = "";
+    [SerializeField] private string rewardedPlacementName = "DefaultRewardedVideo";
+
     public static AdHandler Instance;
     public Button rewardAdButton;
     public TextMeshProUGUI rewardText;
@@ -17,161 +18,143 @@ public class AdHandler : MonoBehaviour
     public int rewardAmount;
     public LevelManager levelManager;
     public PremiumManager premiumManager;
-    public WaitForSeconds secWait = new WaitForSeconds(0.2f);
     public bool noAds;
     public GameObject rewardAd;
 
+    private LevelPlayRewardedAd rewardedAd;
+    private LevelPlayInterstitialAd interstitialAd;
 
     public void Start()
     {
         Instance = this;
-        // IronSource.setMetaData("is_deviceid_optout","true");
-        // IronSource.setMetaData("is_child_directed","true");
-        // IronSource.setMetaData("Google_Family_Self_Certified_SDKS","true");
-        // StartCoroutine(RunIronSourceInitialise());
-        RunIronSourceInitialise();
-        // IronSource.Agent.loadManualRewardedVideo();
+        InitializeLevelPlay();
     }
 
-
-    void RunIronSourceInitialise()
-    {   
-        IronSource.Agent.init(ironSourceAppKey);
-
-        IronSource.Agent.validateIntegration();
-        // CheckRewardsCapped();
-        AttachListeners();
-    }
-
-    // void OnEnable()
-    void AttachListeners()
+    private void InitializeLevelPlay()
     {
-        //Add Init Event
-        IronSourceEvents.onSdkInitializationCompletedEvent += SdkInitializationCompletedEvent;
+        LevelPlay.OnInitSuccess += OnSdkInitializationCompleted;
+        LevelPlay.OnInitFailed += OnSdkInitializationFailed;
+        LevelPlay.Init(appKey);
+    }
 
-        // Add Offerwall Events
-        // IronSourceEvents.onOfferwallClosedEvent += OfferwallClosedEvent;
-        // IronSourceEvents.onOfferwallOpenedEvent += OfferwallOpenedEvent;
-        // IronSourceEvents.onOfferwallShowFailedEvent += OfferwallShowFailedEvent;
-        // IronSourceEvents.onOfferwallAdCreditedEvent += OfferwallAdCreditedEvent;
-        // IronSourceEvents.onGetOfferwallCreditsFailedEvent += GetOfferwallCreditsFailedEvent;
-        // IronSourceEvents.onOfferwallAvailableEvent += OfferwallAvailableEvent;
+    private void OnSdkInitializationCompleted(LevelPlayConfiguration configuration)
+    {
+        Debug.Log("unity-script: LevelPlay SDK initialization completed");
 
-        //Add ImpressionSuccess Event
-        IronSourceEvents.onImpressionDataReadyEvent += ImpressionDataReadyEvent;
+        rewardedAd = new LevelPlayRewardedAd(rewardedAdUnitId);
+        rewardedAd.OnAdLoaded += RewardedOnAdLoadedEvent;
+        rewardedAd.OnAdLoadFailed += RewardedOnAdLoadFailedEvent;
+        rewardedAd.OnAdDisplayed += RewardedOnAdDisplayedEvent;
+        rewardedAd.OnAdDisplayFailed += RewardedOnAdDisplayFailedEvent;
+        rewardedAd.OnAdRewarded += RewardedOnAdRewardedEvent;
+        rewardedAd.OnAdClosed += RewardedOnAdClosedEvent;
+        rewardedAd.OnAdClicked += RewardedOnAdClickedEvent;
 
-        //Add AdInfo Rewarded Video Events
-        IronSourceRewardedVideoEvents.onAdOpenedEvent += RewardedVideoOnAdOpenedEvent;
-        IronSourceRewardedVideoEvents.onAdClosedEvent += RewardedVideoOnAdClosedEvent;
-        IronSourceRewardedVideoEvents.onAdAvailableEvent += RewardedVideoOnAdAvailable;
-        IronSourceRewardedVideoEvents.onAdUnavailableEvent += RewardedVideoOnAdUnavailable;
-        IronSourceRewardedVideoEvents.onAdShowFailedEvent += RewardedVideoOnAdShowFailedEvent;
-        IronSourceRewardedVideoEvents.onAdRewardedEvent += RewardedVideoOnAdRewardedEvent;
-        IronSourceRewardedVideoEvents.onAdClickedEvent += RewardedVideoOnAdClickedEvent;
+        interstitialAd = new LevelPlayInterstitialAd(interstitialAdUnitId);
+        interstitialAd.OnAdLoaded += InterstitialOnAdLoadedEvent;
+        interstitialAd.OnAdLoadFailed += InterstitialOnAdLoadFailedEvent;
+        interstitialAd.OnAdDisplayed += InterstitialOnAdDisplayedEvent;
+        interstitialAd.OnAdDisplayFailed += InterstitialOnAdDisplayFailedEvent;
+        interstitialAd.OnAdClicked += InterstitialOnAdClickedEvent;
+        interstitialAd.OnAdClosed += InterstitialOnAdClosedEvent;
 
-        // //Add AdInfo Interstitial Events
-        IronSourceInterstitialEvents.onAdReadyEvent += InterstitialOnAdReadyEvent;
-        IronSourceInterstitialEvents.onAdLoadFailedEvent += InterstitialOnAdLoadFailed;
-        IronSourceInterstitialEvents.onAdOpenedEvent += InterstitialOnAdOpenedEvent;
-        IronSourceInterstitialEvents.onAdClickedEvent += InterstitialOnAdClickedEvent;
-        IronSourceInterstitialEvents.onAdShowSucceededEvent += InterstitialOnAdShowSucceededEvent;
-        IronSourceInterstitialEvents.onAdShowFailedEvent += InterstitialOnAdShowFailedEvent;
-        IronSourceInterstitialEvents.onAdClosedEvent += InterstitialOnAdClosedEvent;
-
-        // //Add AdInfo Banner Events
-        IronSourceBannerEvents.onAdLoadedEvent += BannerOnAdLoadedEvent;
-        IronSourceBannerEvents.onAdLoadFailedEvent += BannerOnAdLoadFailedEvent;
-        IronSourceBannerEvents.onAdClickedEvent += BannerOnAdClickedEvent;
-        IronSourceBannerEvents.onAdScreenPresentedEvent += BannerOnAdScreenPresentedEvent;
-        IronSourceBannerEvents.onAdScreenDismissedEvent += BannerOnAdScreenDismissedEvent;
-        IronSourceBannerEvents.onAdLeftApplicationEvent += BannerOnAdLeftApplicationEvent;
-
+        StartLoadingInterstitial();
+        StartLoadingRewardAd();
         CheckRewardsCapped();
     }
 
-    void OnApplicationPause(bool isPaused)
+    private void OnSdkInitializationFailed(LevelPlayInitError error)
     {
-        Debug.Log("unity-script: OnApplicationPause = " + isPaused);
-        IronSource.Agent.onApplicationPause(isPaused);
+        Debug.LogError("unity-script: LevelPlay initialization failed: " + error);
+        CheckRewardsCapped();
+    }
+
+    private void OnDestroy()
+    {
+        LevelPlay.OnInitSuccess -= OnSdkInitializationCompleted;
+        LevelPlay.OnInitFailed -= OnSdkInitializationFailed;
+
+        if (rewardedAd != null)
+        {
+            rewardedAd.OnAdLoaded -= RewardedOnAdLoadedEvent;
+            rewardedAd.OnAdLoadFailed -= RewardedOnAdLoadFailedEvent;
+            rewardedAd.OnAdDisplayed -= RewardedOnAdDisplayedEvent;
+            rewardedAd.OnAdDisplayFailed -= RewardedOnAdDisplayFailedEvent;
+            rewardedAd.OnAdRewarded -= RewardedOnAdRewardedEvent;
+            rewardedAd.OnAdClosed -= RewardedOnAdClosedEvent;
+            rewardedAd.OnAdClicked -= RewardedOnAdClickedEvent;
+        }
+
+        if (interstitialAd != null)
+        {
+            interstitialAd.OnAdLoaded -= InterstitialOnAdLoadedEvent;
+            interstitialAd.OnAdLoadFailed -= InterstitialOnAdLoadFailedEvent;
+            interstitialAd.OnAdDisplayed -= InterstitialOnAdDisplayedEvent;
+            interstitialAd.OnAdDisplayFailed -= InterstitialOnAdDisplayFailedEvent;
+            interstitialAd.OnAdClicked -= InterstitialOnAdClickedEvent;
+            interstitialAd.OnAdClosed -= InterstitialOnAdClosedEvent;
+        }
     }
 
     public void ClickRewardedVideoButton()
     {
         Debug.Log("unity-script: ShowRewardedVideoButtonClicked");
-        if (IronSource.Agent.isRewardedVideoAvailable())
+
+        if (rewardedAd != null && rewardedAd.IsAdReady() && !LevelPlayRewardedAd.IsPlacementCapped(rewardedPlacementName))
         {
-            IronSource.Agent.showRewardedVideo();
+            rewardedAd.ShowAd(rewardedPlacementName);
         }
         else
         {
-            Debug.Log("unity-script: IronSource.Agent.isRewardedVideoAvailable - False");
+            Debug.Log("unity-script: rewarded ad not ready or placement capped");
         }
-    }
-
-    public void ClickOfferWallButton()
-    {
-        // if (IronSource.Agent.isOfferwallAvailable())
-        // {
-        //     IronSource.Agent.showOfferwall();
-        // }
-        // else
-        // {
-        //     Debug.Log("IronSource.Agent.isOfferwallAvailable - False");
-        // }
     }
 
     public void StartLoadingInterstitial()
     {
-        Debug.Log("unity-script: LoadInterstitialButtonClicked");
-        if(noAds)
+        if (noAds || interstitialAd == null)
         {
             CheckRewardsCapped();
             return;
         }
-        IronSource.Agent.loadInterstitial();
+
+        Debug.Log("unity-script: LoadInterstitialButtonClicked");
+        interstitialAd.LoadAd();
     }
 
     public void CheckRewardsCapped()
     {
-        bool rewardCapped = IronSource.Agent.isRewardedVideoPlacementCapped("DefaultRewardedVideo");
-        bool rewardAvailable = IronSource.Agent.isRewardedVideoAvailable();
         rewardAdImage.color = new Color(rewardAdImage.color.r, rewardAdImage.color.g, rewardAdImage.color.b, 1f);
 
-        if(rewardCapped)
-        // if(IronSource.Agent.isRewardedVideoAvailable())
+        bool rewardCapped = LevelPlayRewardedAd.IsPlacementCapped(rewardedPlacementName);
+        bool rewardAvailable = rewardedAd != null && rewardedAd.IsAdReady();
+
+        if (rewardCapped || !rewardAvailable)
         {
             rewardAdButton.interactable = false;
             rewardText.text = "No Ad";
-            Debug.Log("unity-script: IronSource.Agent.isRewardAdCapped - true");
-            return;
-        }
-        if(!rewardAvailable)
-        {
-            rewardAdButton.interactable = false;
-            rewardText.text = "No Ad";
-            Debug.Log("unity-script: IronSource.Agent.isRewardAdAvailable - false");
             return;
         }
 
         rewardAdButton.interactable = true;
         rewardAmount = levelManager.level * 10;
-        rewardText.text = "Watch Ad +" + rewardAmount.ToString();
-        Debug.Log("unity-script: IronSource.Agent.isRewardAdCapped - false");
+        rewardText.text = "Watch Ad +" + rewardAmount;
     }
 
     public void StartLoadingRewardAd()
     {
-        IronSource.Agent.loadRewardedVideo();
+        if (rewardedAd == null)
+        {
+            return;
+        }
+
+        rewardedAd.LoadAd();
     }
 
     public void HideRewardAd()
     {
         Vector3 position = rewardAd.transform.localPosition;
         rewardAd.transform.localPosition = new Vector3(position.x, 500, position.z);
-
-        // rewardAdButton.interactable = false;
-        // rewardText.text = "";
-        // rewardAdImage.color = new Color(rewardAdImage.color.r, rewardAdImage.color.g, rewardAdImage.color.b, 0f);
     }
 
     public void RevealRewardAd()
@@ -182,7 +165,6 @@ public class AdHandler : MonoBehaviour
 
     public void OnLevelEnd()
     {
-        // inPlay = false;
         ShowInterstital();
         StartLoadingRewardAd();
         RevealRewardAd();
@@ -197,377 +179,99 @@ public class AdHandler : MonoBehaviour
 
     public void ShowInterstital()
     {
-        if(noAds)
+        if (noAds)
         {
             return;
         }
+
         Debug.Log("unity-script: ShowInterstitialButtonClicked");
-        if (IronSource.Agent.isInterstitialReady())
+        if (interstitialAd != null && interstitialAd.IsAdReady())
         {
-            IronSource.Agent.showInterstitial();
+            interstitialAd.ShowAd();
         }
         else
         {
-            Debug.Log("unity-script: IronSource.Agent.isInterstitialReady - False");
+            Debug.Log("unity-script: interstitial not ready");
         }
     }
 
-    
-    #region Init callback handlers
-
-    void SdkInitializationCompletedEvent()
+    private void RewardedOnAdLoadedEvent(LevelPlayAdInfo adInfo)
     {
-        Debug.Log("unity-script: I got SdkInitializationCompletedEvent");
-    }
-
-    #endregion
-
-    #region AdInfo Rewarded Video
-    void RewardedVideoOnAdOpenedEvent(IronSourceAdInfo adInfo) {
-         Debug.Log("unity-script: I got RewardedVideoOnAdOpenedEvent With AdInfo " + adInfo.ToString());
-    }
-    void RewardedVideoOnAdClosedEvent(IronSourceAdInfo adInfo)
-    {
-        Debug.Log("unity-script: I got RewardedVideoOnAdClosedEvent With AdInfo " + adInfo.ToString());
+        Debug.Log("unity-script: rewarded ad loaded: " + adInfo);
         CheckRewardsCapped();
     }
-    void RewardedVideoOnAdAvailable(IronSourceAdInfo adInfo)
+
+    private void RewardedOnAdLoadFailedEvent(LevelPlayAdError error)
     {
+        Debug.Log("unity-script: rewarded ad load failed: " + error);
         CheckRewardsCapped();
-        Debug.Log("unity-script: I got RewardedVideoOnAdAvailable With AdInfo " + adInfo.ToString());
     }
-    void RewardedVideoOnAdUnavailable()
+
+    private void RewardedOnAdDisplayedEvent(LevelPlayAdInfo adInfo)
     {
-        Debug.Log("unity-script: I got RewardedVideoOnAdUnavailable");
+        Debug.Log("unity-script: rewarded ad displayed: " + adInfo);
+    }
+
+    private void RewardedOnAdDisplayFailedEvent(LevelPlayAdInfo adInfo, LevelPlayAdError error)
+    {
+        Debug.Log("unity-script: rewarded ad display failed: " + error + " | " + adInfo);
+        CheckRewardsCapped();
+    }
+
+    private void RewardedOnAdRewardedEvent(LevelPlayAdInfo adInfo, LevelPlayReward adReward)
+    {
+        Debug.Log("unity-script: rewarded user. adInfo=" + adInfo + " reward=" + adReward);
+
+        int payout = rewardAmount;
+        if (adReward != null && adReward.Amount > 0)
+        {
+            payout = adReward.Amount;
+        }
+
+        premiumManager.UpdatePremium(payout);
+    }
+
+    private void RewardedOnAdClosedEvent(LevelPlayAdInfo adInfo)
+    {
+        Debug.Log("unity-script: rewarded ad closed: " + adInfo);
         StartLoadingRewardAd();
-    }
-    void RewardedVideoOnAdShowFailedEvent(IronSourceError ironSourceError,IronSourceAdInfo adInfo)
-    {
-        Debug.Log("unity-script: I got RewardedVideoAdOpenedEvent With Error"+ironSourceError.ToString() + "And AdInfo " + adInfo.ToString());
-    }
-    void RewardedVideoOnAdRewardedEvent(IronSourcePlacement ironSourcePlacement,IronSourceAdInfo adInfo)
-    {
-        Debug.Log("unity-script: I got RewardedVideoOnAdRewardedEvent With Placement" + ironSourcePlacement.ToString()+ "And AdInfo " + adInfo.ToString());
-        // int rewardAmount = ironSourcePlacement.getRewardAmount();
-        Debug.Log("unity-script: I got RewardedVideoAdRewardedEvent, amount = " + rewardAmount.ToString() + " name = " + ironSourcePlacement.getRewardName());
-        premiumManager.UpdatePremium(rewardAmount);
-    }
-    void RewardedVideoOnAdClickedEvent(IronSourcePlacement ironSourcePlacement, IronSourceAdInfo adInfo)
-    {
-        Debug.Log("unity-script: I got RewardedVideoOnAdClickedEvent With Placement" + ironSourcePlacement.ToString() + "And AdInfo " + adInfo.ToString());
-    }
-
-    #endregion
-
-
-
-    #region RewardedAd callback handlers
-
-    void RewardedVideoAvailabilityChangedEvent(bool canShowAd)
-    {
-        Debug.Log("unity-script: I got RewardedVideoAvailabilityChangedEvent, value = " + canShowAd);
-    }
-
-    void RewardedVideoAdOpenedEvent()
-    {
-        Debug.Log("unity-script: I got RewardedVideoAdOpenedEvent");
-    }
-
-    void RewardedVideoAdRewardedEvent(IronSourcePlacement ssp)
-    {
-        int rewardAmount = ssp.getRewardAmount();
-        Debug.Log("unity-script: I got RewardedVideoAdRewardedEvent, amount = " + rewardAmount.ToString() + " name = " + ssp.getRewardName());
-        premiumManager.UpdatePremium(rewardAmount);
-    }
-
-    void RewardedVideoAdClosedEvent()
-    {
-        Debug.Log("unity-script: I got RewardedVideoAdClosedEvent");
-    }
-
-    void RewardedVideoAdStartedEvent()
-    {
-        Debug.Log("unity-script: I got RewardedVideoAdStartedEvent");
-    }
-
-    void RewardedVideoAdEndedEvent()
-    {
-        Debug.Log("unity-script: I got RewardedVideoAdEndedEvent");
-    }
-
-    void RewardedVideoAdShowFailedEvent(IronSourceError error)
-    {
-        Debug.Log("unity-script: I got RewardedVideoAdShowFailedEvent, code :  " + error.getCode() + ", description : " + error.getDescription());
-    }
-
-    void RewardedVideoAdClickedEvent(IronSourcePlacement ssp)
-    {
-        Debug.Log("unity-script: I got RewardedVideoAdClickedEvent, name = " + ssp.getRewardName());
-    }
-
-    /************* RewardedVideo DemandOnly Delegates *************/
-
-    void RewardedVideoAdLoadedDemandOnlyEvent(string instanceId)
-    {
-        
-        Debug.Log("unity-script: I got RewardedVideoAdLoadedDemandOnlyEvent for instance: " + instanceId);
-    }
-
-    void RewardedVideoAdLoadFailedDemandOnlyEvent(string instanceId, IronSourceError error)
-    {
-        
-        Debug.Log("unity-script: I got RewardedVideoAdLoadFailedDemandOnlyEvent for instance: " + instanceId + ", code :  " + error.getCode() + ", description : " + error.getDescription());
-    }
-
-    void RewardedVideoAdOpenedDemandOnlyEvent(string instanceId)
-    {
-        Debug.Log("unity-script: I got RewardedVideoAdOpenedDemandOnlyEvent for instance: " + instanceId);
-    }
-
-    void RewardedVideoAdRewardedDemandOnlyEvent(string instanceId)
-    {
-        Debug.Log("unity-script: I got RewardedVideoAdRewardedDemandOnlyEvent for instance: " + instanceId);
-    }
-
-    void RewardedVideoAdClosedDemandOnlyEvent(string instanceId)
-    {
-        Debug.Log("unity-script: I got RewardedVideoAdClosedDemandOnlyEvent for instance: " + instanceId);
-    }
-
-    void RewardedVideoAdShowFailedDemandOnlyEvent(string instanceId, IronSourceError error)
-    {
-        Debug.Log("unity-script: I got RewardedVideoAdShowFailedDemandOnlyEvent for instance: " + instanceId + ", code :  " + error.getCode() + ", description : " + error.getDescription());
-    }
-
-    void RewardedVideoAdClickedDemandOnlyEvent(string instanceId)
-    {
-        Debug.Log("unity-script: I got RewardedVideoAdClickedDemandOnlyEvent for instance: " + instanceId);
-    }
-
-
-    #endregion
-
-    #region AdInfo Interstitial
-
-    void InterstitialOnAdReadyEvent(IronSourceAdInfo adInfo) {
-        Debug.Log("unity-script: I got InterstitialOnAdReadyEvent With AdInfo " + adInfo.ToString());
-    }
-
-    void InterstitialOnAdLoadFailed(IronSourceError ironSourceError) {
-        Debug.Log("unity-script: I got InterstitialOnAdLoadFailed With Error " + ironSourceError.ToString());
-    }
-
-    void InterstitialOnAdOpenedEvent(IronSourceAdInfo adInfo) {
-        Debug.Log("unity-script: I got InterstitialOnAdOpenedEvent With AdInfo " + adInfo.ToString());
-    }
-
-    void InterstitialOnAdClickedEvent(IronSourceAdInfo adInfo) {
-        Debug.Log("unity-script: I got InterstitialOnAdClickedEvent With AdInfo " + adInfo.ToString());
-    }
-
-    void InterstitialOnAdShowSucceededEvent(IronSourceAdInfo adInfo) {
-        Debug.Log("unity-script: I got InterstitialOnAdShowSucceededEvent With AdInfo " + adInfo.ToString());
-    }
-
-    void InterstitialOnAdShowFailedEvent(IronSourceError ironSourceError, IronSourceAdInfo adInfo) {
-        Debug.Log("unity-script: I got InterstitialOnAdShowFailedEvent With Error " +ironSourceError.ToString()+ " And AdInfo " + adInfo.ToString());
-    }
-
-    void InterstitialOnAdClosedEvent(IronSourceAdInfo adInfo) {
-        Debug.Log("unity-script: I got InterstitialOnAdClosedEvent With AdInfo " + adInfo.ToString());
         CheckRewardsCapped();
     }
 
-
-    #endregion
-
-    #region Interstitial callback handlers
-
-    void InterstitialAdReadyEvent()
+    private void RewardedOnAdClickedEvent(LevelPlayAdInfo adInfo)
     {
-        Debug.Log("unity-script: I got InterstitialAdReadyEvent");
+        Debug.Log("unity-script: rewarded ad clicked: " + adInfo);
     }
 
-    void InterstitialAdLoadFailedEvent(IronSourceError error)
+    private void InterstitialOnAdLoadedEvent(LevelPlayAdInfo adInfo)
     {
-        Debug.Log("unity-script: I got InterstitialAdLoadFailedEvent, code: " + error.getCode() + ", description : " + error.getDescription());
+        Debug.Log("unity-script: interstitial loaded: " + adInfo);
     }
 
-    void InterstitialAdShowSucceededEvent()
+    private void InterstitialOnAdLoadFailedEvent(LevelPlayAdError error)
     {
-        Debug.Log("unity-script: I got InterstitialAdShowSucceededEvent");
+        Debug.Log("unity-script: interstitial load failed: " + error);
     }
 
-    void InterstitialAdShowFailedEvent(IronSourceError error)
+    private void InterstitialOnAdDisplayedEvent(LevelPlayAdInfo adInfo)
     {
-        Debug.Log("unity-script: I got InterstitialAdShowFailedEvent, code :  " + error.getCode() + ", description : " + error.getDescription());
+        Debug.Log("unity-script: interstitial displayed: " + adInfo);
     }
 
-    void InterstitialAdClickedEvent()
+    private void InterstitialOnAdDisplayFailedEvent(LevelPlayAdInfo adInfo, LevelPlayAdError error)
     {
-        Debug.Log("unity-script: I got InterstitialAdClickedEvent");
+        Debug.Log("unity-script: interstitial display failed: " + error + " | " + adInfo);
     }
 
-    void InterstitialAdOpenedEvent()
+    private void InterstitialOnAdClickedEvent(LevelPlayAdInfo adInfo)
     {
-        Debug.Log("unity-script: I got InterstitialAdOpenedEvent");
+        Debug.Log("unity-script: interstitial clicked: " + adInfo);
     }
 
-    void InterstitialAdClosedEvent()
+    private void InterstitialOnAdClosedEvent(LevelPlayAdInfo adInfo)
     {
-        Debug.Log("unity-script: I got InterstitialAdClosedEvent");
+        Debug.Log("unity-script: interstitial closed: " + adInfo);
+        StartLoadingInterstitial();
+        CheckRewardsCapped();
     }
-
-    /************* Interstitial DemandOnly Delegates *************/
-
-    void InterstitialAdReadyDemandOnlyEvent(string instanceId)
-    {
-        Debug.Log("unity-script: I got InterstitialAdReadyDemandOnlyEvent for instance: " + instanceId);
-    }
-
-    void InterstitialAdLoadFailedDemandOnlyEvent(string instanceId, IronSourceError error)
-    {
-        Debug.Log("unity-script: I got InterstitialAdLoadFailedDemandOnlyEvent for instance: " + instanceId + ", error code: " + error.getCode() + ",error description : " + error.getDescription());
-    }
-
-    void InterstitialAdShowFailedDemandOnlyEvent(string instanceId, IronSourceError error)
-    {
-        Debug.Log("unity-script: I got InterstitialAdShowFailedDemandOnlyEvent for instance: " + instanceId + ", error code :  " + error.getCode() + ",error description : " + error.getDescription());
-    }
-
-    void InterstitialAdClickedDemandOnlyEvent(string instanceId)
-    {
-        Debug.Log("unity-script: I got InterstitialAdClickedDemandOnlyEvent for instance: " + instanceId);
-    }
-
-    void InterstitialAdOpenedDemandOnlyEvent(string instanceId)
-    {
-        Debug.Log("unity-script: I got InterstitialAdOpenedDemandOnlyEvent for instance: " + instanceId);
-    }
-
-    void InterstitialAdClosedDemandOnlyEvent(string instanceId)
-    {
-        Debug.Log("unity-script: I got InterstitialAdClosedDemandOnlyEvent for instance: " + instanceId);
-    }
-
-
-
-
-    #endregion
-
-    #region Banner AdInfo
-
-    void BannerOnAdLoadedEvent(IronSourceAdInfo adInfo) {
-        Debug.Log("unity-script: I got BannerOnAdLoadedEvent With AdInfo " + adInfo.ToString());
-    }
-
-    void BannerOnAdLoadFailedEvent(IronSourceError ironSourceError) {
-        Debug.Log("unity-script: I got BannerOnAdLoadFailedEvent With Error " + ironSourceError.ToString());
-    }
-
-    void BannerOnAdClickedEvent(IronSourceAdInfo adInfo) {
-        Debug.Log("unity-script: I got BannerOnAdClickedEvent With AdInfo " + adInfo.ToString());
-    }
-
-    void BannerOnAdScreenPresentedEvent(IronSourceAdInfo adInfo) {
-        Debug.Log("unity-script: I got BannerOnAdScreenPresentedEvent With AdInfo " + adInfo.ToString());
-    }
-
-    void BannerOnAdScreenDismissedEvent(IronSourceAdInfo adInfo) {
-        Debug.Log("unity-script: I got BannerOnAdScreenDismissedEvent With AdInfo " + adInfo.ToString());
-    }
-
-    void BannerOnAdLeftApplicationEvent(IronSourceAdInfo adInfo) {
-        Debug.Log("unity-script: I got BannerOnAdLeftApplicationEvent With AdInfo " + adInfo.ToString());
-    }
-
-    #endregion
-
-    #region Banner callback handlers
-
-    void BannerAdLoadedEvent()
-    {
-        Debug.Log("unity-script: I got BannerAdLoadedEvent");
-    }
-
-    void BannerAdLoadFailedEvent(IronSourceError error)
-    {
-        Debug.Log("unity-script: I got BannerAdLoadFailedEvent, code: " + error.getCode() + ", description : " + error.getDescription());
-    }
-
-    void BannerAdClickedEvent()
-    {
-        Debug.Log("unity-script: I got BannerAdClickedEvent");
-    }
-
-    void BannerAdScreenPresentedEvent()
-    {
-        Debug.Log("unity-script: I got BannerAdScreenPresentedEvent");
-    }
-
-    void BannerAdScreenDismissedEvent()
-    {
-        Debug.Log("unity-script: I got BannerAdScreenDismissedEvent");
-    }
-
-    void BannerAdLeftApplicationEvent()
-    {
-        Debug.Log("unity-script: I got BannerAdLeftApplicationEvent");
-    }
-
-    #endregion
-
-
-    #region Offerwall callback handlers
-
-    void OfferwallOpenedEvent()
-    {
-        Debug.Log("I got OfferwallOpenedEvent");
-    }
-
-    void OfferwallClosedEvent()
-    {
-        Debug.Log("I got OfferwallClosedEvent");
-    }
-
-    void OfferwallShowFailedEvent(IronSourceError error)
-    {
-        Debug.Log("I got OfferwallShowFailedEvent, code :  " + error.getCode() + ", description : " + error.getDescription());
-    }
-
-    void OfferwallAdCreditedEvent(Dictionary<string, object> dict)
-    {
-        Debug.Log("I got OfferwallAdCreditedEvent, current credits = " + dict["credits"] + " totalCredits = " + dict["totalCredits"]);
-        
-    }
-
-    void GetOfferwallCreditsFailedEvent(IronSourceError error)
-    {
-        Debug.Log("I got GetOfferwallCreditsFailedEvent, code :  " + error.getCode() + ", description : " + error.getDescription());
-    }
-
-    void OfferwallAvailableEvent(bool canShowOfferwal)
-    {
-        Debug.Log("I got OfferwallAvailableEvent, value = " + canShowOfferwal);
-        
-    }
-
-    #endregion
-
-    #region ImpressionSuccess callback handler
-
-    void ImpressionSuccessEvent(IronSourceImpressionData impressionData)
-    {
-        Debug.Log("unity - script: I got ImpressionSuccessEvent ToString(): " + impressionData.ToString());
-        Debug.Log("unity - script: I got ImpressionSuccessEvent allData: " + impressionData.allData);
-    }
-
-    void ImpressionDataReadyEvent(IronSourceImpressionData impressionData)
-    {
-        Debug.Log("unity - script: I got ImpressionDataReadyEvent ToString(): " + impressionData.ToString());
-        Debug.Log("unity - script: I got ImpressionDataReadyEvent allData: " + impressionData.allData);
-    }
-
-    #endregion
-
 }
