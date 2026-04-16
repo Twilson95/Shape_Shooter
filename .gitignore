@@ -13,6 +13,10 @@
 [Uu]ser[Ss]ettings/
 [Pp]rofiler[Cc]aptures/
 
+# Large Assets to ignore
+Assets/8Bit Music - 062022
+Assets/Free Pack
+
 # Rider/IDE
 .idea/
 .vs/
