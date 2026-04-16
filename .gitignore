@@ -1,0 +1,24 @@
+﻿/.idea/.idea.Survival Shapes/.idea/.gitignore
+/.idea/.idea.Survival Shapes/.idea/encodings.xml
+/.idea/.idea.Survival Shapes/.idea/indexLayout.xml
+/.idea/.idea.Survival Shapes/.idea/projectSettingsUpdater.xml
+/.idea/.idea.Survival Shapes/.idea/vcs.xml
+/.idea/.idea.Survival Shapes/.idea/workspace.xml
+
+# Unity generated (never commit)
+[Ll]ibrary/
+[Tt]emp/
+[Ll]ogs/
+[Oo]bj/
+[Uu]ser[Ss]ettings/
+[Pp]rofiler[Cc]aptures/
+
+# Rider/IDE
+.idea/
+.vs/
+
+# Unity-generated solution/project files
+*.sln
+*.csproj
+*.DotSettings.user
+
