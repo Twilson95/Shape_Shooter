@@ -10,6 +10,7 @@ public class AdHandler : MonoBehaviour
     [SerializeField] private string rewardedAdUnitId = "";
     [SerializeField] private string interstitialAdUnitId = "";
     [SerializeField] private string rewardedPlacementName = "DefaultRewardedVideo";
+    [SerializeField] private float adLoadRetryDelaySeconds = 10f;
 
     public static AdHandler Instance;
     public Button rewardAdButton;
@@ -32,6 +33,13 @@ public class AdHandler : MonoBehaviour
 
     private void InitializeLevelPlay()
     {
+        if (string.IsNullOrWhiteSpace(appKey))
+        {
+            Debug.LogError("unity-script: LevelPlay appKey is empty. Set it in the AdHandler inspector.");
+            CheckRewardsCapped();
+            return;
+        }
+
         LevelPlay.OnInitSuccess += OnSdkInitializationCompleted;
         LevelPlay.OnInitFailed += OnSdkInitializationFailed;
         LevelPlay.Init(appKey);
@@ -41,22 +49,36 @@ public class AdHandler : MonoBehaviour
     {
         Debug.Log("unity-script: LevelPlay SDK initialization completed");
 
-        rewardedAd = new LevelPlayRewardedAd(rewardedAdUnitId);
-        rewardedAd.OnAdLoaded += RewardedOnAdLoadedEvent;
-        rewardedAd.OnAdLoadFailed += RewardedOnAdLoadFailedEvent;
-        rewardedAd.OnAdDisplayed += RewardedOnAdDisplayedEvent;
-        rewardedAd.OnAdDisplayFailed += RewardedOnAdDisplayFailedEvent;
-        rewardedAd.OnAdRewarded += RewardedOnAdRewardedEvent;
-        rewardedAd.OnAdClosed += RewardedOnAdClosedEvent;
-        rewardedAd.OnAdClicked += RewardedOnAdClickedEvent;
+        if (string.IsNullOrWhiteSpace(rewardedAdUnitId))
+        {
+            Debug.LogWarning("unity-script: rewardedAdUnitId is empty. Rewarded ads will not load.");
+        }
+        else
+        {
+            rewardedAd = new LevelPlayRewardedAd(rewardedAdUnitId);
+            rewardedAd.OnAdLoaded += RewardedOnAdLoadedEvent;
+            rewardedAd.OnAdLoadFailed += RewardedOnAdLoadFailedEvent;
+            rewardedAd.OnAdDisplayed += RewardedOnAdDisplayedEvent;
+            rewardedAd.OnAdDisplayFailed += RewardedOnAdDisplayFailedEvent;
+            rewardedAd.OnAdRewarded += RewardedOnAdRewardedEvent;
+            rewardedAd.OnAdClosed += RewardedOnAdClosedEvent;
+            rewardedAd.OnAdClicked += RewardedOnAdClickedEvent;
+        }
 
-        interstitialAd = new LevelPlayInterstitialAd(interstitialAdUnitId);
-        interstitialAd.OnAdLoaded += InterstitialOnAdLoadedEvent;
-        interstitialAd.OnAdLoadFailed += InterstitialOnAdLoadFailedEvent;
-        interstitialAd.OnAdDisplayed += InterstitialOnAdDisplayedEvent;
-        interstitialAd.OnAdDisplayFailed += InterstitialOnAdDisplayFailedEvent;
-        interstitialAd.OnAdClicked += InterstitialOnAdClickedEvent;
-        interstitialAd.OnAdClosed += InterstitialOnAdClosedEvent;
+        if (string.IsNullOrWhiteSpace(interstitialAdUnitId))
+        {
+            Debug.LogWarning("unity-script: interstitialAdUnitId is empty. Interstitial ads will not load.");
+        }
+        else
+        {
+            interstitialAd = new LevelPlayInterstitialAd(interstitialAdUnitId);
+            interstitialAd.OnAdLoaded += InterstitialOnAdLoadedEvent;
+            interstitialAd.OnAdLoadFailed += InterstitialOnAdLoadFailedEvent;
+            interstitialAd.OnAdDisplayed += InterstitialOnAdDisplayedEvent;
+            interstitialAd.OnAdDisplayFailed += InterstitialOnAdDisplayFailedEvent;
+            interstitialAd.OnAdClicked += InterstitialOnAdClickedEvent;
+            interstitialAd.OnAdClosed += InterstitialOnAdClosedEvent;
+        }
 
         StartLoadingInterstitial();
         StartLoadingRewardAd();
@@ -66,11 +88,13 @@ public class AdHandler : MonoBehaviour
     private void OnSdkInitializationFailed(LevelPlayInitError error)
     {
         Debug.LogError("unity-script: LevelPlay initialization failed: " + error);
+        Invoke(nameof(InitializeLevelPlay), adLoadRetryDelaySeconds);
         CheckRewardsCapped();
     }
 
     private void OnDestroy()
     {
+        CancelInvoke();
         LevelPlay.OnInitSuccess -= OnSdkInitializationCompleted;
         LevelPlay.OnInitFailed -= OnSdkInitializationFailed;
 
@@ -204,6 +228,7 @@ public class AdHandler : MonoBehaviour
     private void RewardedOnAdLoadFailedEvent(LevelPlayAdError error)
     {
         Debug.Log("unity-script: rewarded ad load failed: " + error);
+        Invoke(nameof(StartLoadingRewardAd), adLoadRetryDelaySeconds);
         CheckRewardsCapped();
     }
 
@@ -251,6 +276,7 @@ public class AdHandler : MonoBehaviour
     private void InterstitialOnAdLoadFailedEvent(LevelPlayAdError error)
     {
         Debug.Log("unity-script: interstitial load failed: " + error);
+        Invoke(nameof(StartLoadingInterstitial), adLoadRetryDelaySeconds);
     }
 
     private void InterstitialOnAdDisplayedEvent(LevelPlayAdInfo adInfo)
