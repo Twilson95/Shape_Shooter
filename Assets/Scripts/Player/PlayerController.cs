@@ -104,7 +104,7 @@ public class PlayerController : MonoBehaviour
             ResetStatLevels();
             GameObject.Find("GameController").GetComponent<GameController>().SaveData();
             //find all childen of gameobject
-            HandleUpgrade[] handleUpgradesList = FindObjectsOfType<HandleUpgrade>();
+            HandleUpgrade[] handleUpgradesList = FindObjectsByType<HandleUpgrade>(FindObjectsSortMode.None);
             foreach(HandleUpgrade handleUpgrade in handleUpgradesList)
             {
                 handleUpgrade.ResetUpgrades();

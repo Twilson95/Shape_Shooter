@@ -90,7 +90,7 @@ public class HandlePremiumUpgrade : MonoBehaviour
             player.RaiseBaseLevel();
             player.ResetStatLevels();
 
-            HandleUpgrade[] handleUpgradesList = FindObjectsOfType<HandleUpgrade>();
+            HandleUpgrade[] handleUpgradesList = FindObjectsByType<HandleUpgrade>(FindObjectsSortMode.None);
             foreach(HandleUpgrade handleUpgrade in handleUpgradesList)
             {
                 handleUpgrade.baseLevel += 1;
