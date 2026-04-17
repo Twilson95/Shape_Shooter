@@ -1,5 +1,7 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -8,6 +10,49 @@ using UnityEngine.UI;
 
 public class IAPManager : MonoBehaviour
 {
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    static void RegisterStoreServiceCallbacksEarly()
+    {
+        MethodInfo storeServiceFactory = typeof(UnityIAPServices).GetMethod("StoreService", BindingFlags.Public | BindingFlags.Static);
+        object storeService = storeServiceFactory?.Invoke(null, null);
+        if (storeService == null)
+        {
+            return;
+        }
+
+        RegisterNoOpStoreCallback(storeService, "OnStoreConnected", nameof(NoOpStoreConnected), nameof(NoOpStoreConnectedWithPayload));
+        RegisterNoOpStoreCallback(storeService, "OnStoreDisconnected", nameof(NoOpStoreDisconnected), nameof(NoOpStoreDisconnectedWithPayload));
+    }
+
+    static void RegisterNoOpStoreCallback(object storeService, string eventName, string noArgMethodName, string payloadMethodName)
+    {
+        EventInfo callbackEvent = storeService.GetType().GetEvent(eventName, BindingFlags.Instance | BindingFlags.Public);
+        Type callbackType = callbackEvent?.EventHandlerType;
+        if (callbackType == null)
+        {
+            return;
+        }
+
+        MethodInfo invokeMethod = callbackType.GetMethod("Invoke");
+        int parameterCount = invokeMethod?.GetParameters().Length ?? 0;
+        MethodInfo callbackMethod = typeof(IAPManager).GetMethod(
+            parameterCount == 0 ? noArgMethodName : payloadMethodName,
+            BindingFlags.Static | BindingFlags.NonPublic
+        );
+        if (callbackMethod == null)
+        {
+            return;
+        }
+
+        Delegate callback = Delegate.CreateDelegate(callbackType, callbackMethod);
+        callbackEvent.AddEventHandler(storeService, callback);
+    }
+
+    static void NoOpStoreConnected() { }
+    static void NoOpStoreConnectedWithPayload(object _) { }
+    static void NoOpStoreDisconnected() { }
+    static void NoOpStoreDisconnectedWithPayload(object _) { }
+
     StoreController m_StoreController;
 
     // Your product IDs. They should match the IDs configured in your store dashboards.
@@ -40,9 +85,10 @@ public class IAPManager : MonoBehaviour
         m_StoreController.OnProductsFetchFailed += OnProductsFetchFailed;
         m_StoreController.OnPurchasesFetched += OnPurchasesFetched;
         m_StoreController.OnPurchasesFetchFailed += OnPurchasesFetchFailed;
+        m_StoreController.OnStoreConnected += OnStoreConnected;
         m_StoreController.OnStoreDisconnected += OnStoreDisconnected;
 
-        await m_StoreController.Connect();
+        await ConnectStore();
 
         var initialProductsToFetch = new List<ProductDefinition>
         {
@@ -55,6 +101,96 @@ public class IAPManager : MonoBehaviour
 
         m_StoreController.FetchProducts(initialProductsToFetch);
         shopButton.interactable = true;
+    }
+
+    async Task ConnectStore()
+    {
+        MethodInfo connectWithCallbacks = m_StoreController
+            .GetType()
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .FirstOrDefault(method =>
+            {
+                if (method.Name != "Connect")
+                {
+                    return false;
+                }
+
+                ParameterInfo[] parameters = method.GetParameters();
+                return parameters.Length == 2
+                    && typeof(Delegate).IsAssignableFrom(parameters[0].ParameterType)
+                    && typeof(Delegate).IsAssignableFrom(parameters[1].ParameterType);
+            });
+
+        if (connectWithCallbacks != null)
+        {
+            ParameterInfo[] callbackParameters = connectWithCallbacks.GetParameters();
+            Delegate onConnected = CreateStoreCallbackDelegate(
+                callbackParameters[0].ParameterType,
+                nameof(HandleStoreConnectedNoArgs),
+                nameof(HandleStoreConnectedWithPayload)
+            );
+            Delegate onDisconnected = CreateStoreCallbackDelegate(
+                callbackParameters[1].ParameterType,
+                nameof(HandleStoreDisconnectedNoArgs),
+                nameof(HandleStoreDisconnectedWithPayload)
+            );
+
+            object connectResult = connectWithCallbacks.Invoke(m_StoreController, new object[] { onConnected, onDisconnected });
+            if (connectResult is Task connectTask)
+            {
+                await connectTask;
+            }
+            return;
+        }
+
+        await m_StoreController.Connect();
+    }
+
+    Delegate CreateStoreCallbackDelegate(Type delegateType, string noArgMethodName, string payloadMethodName)
+    {
+        MethodInfo invokeMethod = delegateType.GetMethod("Invoke");
+        ParameterInfo[] parameters = invokeMethod?.GetParameters();
+
+        if (parameters == null || parameters.Length == 0)
+        {
+            return Delegate.CreateDelegate(
+                delegateType,
+                this,
+                GetType().GetMethod(noArgMethodName, BindingFlags.Instance | BindingFlags.NonPublic)
+            );
+        }
+
+        return Delegate.CreateDelegate(
+            delegateType,
+            this,
+            GetType().GetMethod(payloadMethodName, BindingFlags.Instance | BindingFlags.NonPublic)
+        );
+    }
+
+    void HandleStoreConnectedNoArgs()
+    {
+        OnStoreConnected();
+    }
+
+    void HandleStoreConnectedWithPayload(object _)
+    {
+        OnStoreConnected();
+    }
+
+    void HandleStoreDisconnectedNoArgs()
+    {
+        Debug.Log("Store disconnected.");
+    }
+
+    void HandleStoreDisconnectedWithPayload(object payload)
+    {
+        if (payload is StoreConnectionFailureDescription failure)
+        {
+            OnStoreDisconnected(failure);
+            return;
+        }
+
+        Debug.Log($"Store disconnected. Reason: {payload}");
     }
 
     public void Buy500Gold()
@@ -117,6 +253,11 @@ public class IAPManager : MonoBehaviour
     void OnStoreDisconnected(StoreConnectionFailureDescription failure)
     {
         Debug.Log($"Store disconnected. Reason: {failure.Message}");
+    }
+
+    void OnStoreConnected()
+    {
+        Debug.Log("Store connected.");
     }
 
     void OnPurchasePending(PendingOrder pendingOrder)
@@ -261,6 +402,7 @@ public class IAPManager : MonoBehaviour
         m_StoreController.OnProductsFetchFailed -= OnProductsFetchFailed;
         m_StoreController.OnPurchasesFetched -= OnPurchasesFetched;
         m_StoreController.OnPurchasesFetchFailed -= OnPurchasesFetchFailed;
+        m_StoreController.OnStoreConnected -= OnStoreConnected;
         m_StoreController.OnStoreDisconnected -= OnStoreDisconnected;
     }
 }
