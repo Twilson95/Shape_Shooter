@@ -1,16 +1,16 @@
-using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Reflection;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Purchasing;
-using UnityEngine.Purchasing.Extension;
 using UnityEngine.UI;
-using System.Collections;
 
-
-public class IAPManager : MonoBehaviour, IDetailedStoreListener
+public class IAPManager : MonoBehaviour
 {
-    IStoreController m_StoreController; // The Unity Purchasing system.
+    StoreController m_StoreController;
 
-    //Your products IDs. They should match the ids of your products in your store.
+    // Your product IDs. They should match the IDs configured in your store dashboards.
     public string goldProductId1 = "shapeshooter_500_gold_coins";
     public string goldProductId2 = "shapeshooter_1000_gold_coins";
     public string goldProductId3 = "shapeshooter_2500_gold_coins";
@@ -20,153 +20,206 @@ public class IAPManager : MonoBehaviour, IDetailedStoreListener
     public PremiumManager premiumManager;
     public GameController gameController;
     public AdHandler adHandler;
-    // public Button buyButton;
     public OptionsButton options;
     public Button shopButton;
 
-    void Start()
+    string m_LastRequestedProductId;
+
+    async void Start()
     {
-        InitializePurchasing();
-        
+        await InitializePurchasing();
     }
 
-
-
-    void InitializePurchasing()
+    async Task InitializePurchasing()
     {
-        var builder = ConfigurationBuilder.Instance(StandardPurchasingModule.Instance());
+        m_StoreController = UnityIAPServices.StoreController();
 
-        //Add products that will be purchasable and indicate its type.
-        builder.AddProduct(goldProductId1, ProductType.Consumable);
-        builder.AddProduct(goldProductId2, ProductType.Consumable);
-        builder.AddProduct(goldProductId3, ProductType.Consumable);
-        builder.AddProduct(goldProductId4, ProductType.Consumable);
-        builder.AddProduct(removeAdsProductId, ProductType.NonConsumable);
+        m_StoreController.OnPurchasePending += OnPurchasePending;
+        m_StoreController.OnPurchaseFailed += OnPurchaseFailed;
+        m_StoreController.OnProductsFetched += OnProductsFetched;
+        m_StoreController.OnProductsFetchFailed += OnProductsFetchFailed;
+        m_StoreController.OnPurchasesFetched += OnPurchasesFetched;
+        m_StoreController.OnPurchasesFetchFailed += OnPurchasesFetchFailed;
+        m_StoreController.OnStoreDisconnected += OnStoreDisconnected;
 
-        UnityPurchasing.Initialize(this, builder);
+        await m_StoreController.Connect();
+
+        var initialProductsToFetch = new List<ProductDefinition>
+        {
+            new(goldProductId1, ProductType.Consumable),
+            new(goldProductId2, ProductType.Consumable),
+            new(goldProductId3, ProductType.Consumable),
+            new(goldProductId4, ProductType.Consumable),
+            new(removeAdsProductId, ProductType.NonConsumable)
+        };
+
+        m_StoreController.FetchProducts(initialProductsToFetch);
+        shopButton.interactable = true;
     }
 
     public void Buy500Gold()
     {
-        m_StoreController.InitiatePurchase(goldProductId1);
+        PurchaseProduct(goldProductId1);
     }
 
     public void Buy1000Gold()
     {
-        m_StoreController.InitiatePurchase(goldProductId2);
+        PurchaseProduct(goldProductId2);
     }
 
     public void Buy2500Gold()
     {
-        m_StoreController.InitiatePurchase(goldProductId3);
+        PurchaseProduct(goldProductId3);
     }
 
     public void Buy5000Gold()
     {
-        m_StoreController.InitiatePurchase(goldProductId4);
+        PurchaseProduct(goldProductId4);
     }
 
     public void BuyRemoveAds()
     {
-        m_StoreController.InitiatePurchase(removeAdsProductId);
+        PurchaseProduct(removeAdsProductId);
     }
 
-    public void OnInitialized(IStoreController controller, IExtensionProvider extensions)
+    void PurchaseProduct(string productId)
     {
-        Debug.Log("In-App Purchasing successfully initialized");
-        m_StoreController = controller;
-        shopButton.interactable = true;
+        m_LastRequestedProductId = productId;
+        m_StoreController?.PurchaseProduct(productId);
+    }
 
-        Product product = m_StoreController.products.WithID(removeAdsProductId);
+    void OnProductsFetched(List<Product> products)
+    {
+        Debug.Log($"IAP products fetched: {products.Count}");
+        m_StoreController.FetchPurchases();
+    }
 
-        // Check if the product is not null
-        if (product != null)
-        {
-            // Log the product information
-            Debug.Log("Product ID: " + product.definition.id);
-            Debug.Log("Product Title: " + product.metadata.localizedTitle);
-            Debug.Log("Product Description: " + product.metadata.localizedDescription);
-            Debug.Log("Product Price: " + product.metadata.localizedPriceString);
-            Debug.Log("Product Receipt: " + product.receipt);
-        }
-        else
-        {
-            Debug.Log("Product not found: " + removeAdsProductId);
-        }
+    void OnProductsFetchFailed(ProductFetchFailed failure)
+    {
+        Debug.Log($"Failed to fetch products. Reason: {failure.FailureReason}");
+    }
 
-        if (product != null && product.hasReceipt)
+    void OnPurchasesFetched(Orders orders)
+    {
+        Debug.Log("Purchases fetched.");
+
+        if (ContainsProductInOrderCollection(orders, removeAdsProductId))
         {
-            // Owned Non Consumables and Subscriptions should always have receipts.
-            // So here the Non Consumable product has already been bought.
             DisableAds();
         }
     }
 
-    public void OnInitializeFailed(InitializationFailureReason error)
+    void OnPurchasesFetchFailed(PurchasesFetchFailureDescription failure)
     {
-        OnInitializeFailed(error, null);
+        Debug.Log($"Failed to fetch purchases. Reason: {failure.FailureReason}");
     }
 
-    public void OnInitializeFailed(InitializationFailureReason error, string message)
+    void OnStoreDisconnected(StoreConnectionFailureDescription failure)
     {
-        var errorMessage = $"Purchasing failed to initialize. Reason: {error}.";
-
-        if (message != null)
-        {
-            errorMessage += $" More details: {message}";
-        }
-
-        Debug.Log(errorMessage);
+        Debug.Log($"Store disconnected. Reason: {failure.FailureReason}");
     }
 
-    public PurchaseProcessingResult ProcessPurchase(PurchaseEventArgs args)
+    void OnPurchasePending(PendingOrder pendingOrder)
     {
-        //Retrieve the purchased product
-        var product = args.purchasedProduct;
+        string purchasedProductId = TryExtractProductIdFromOrder(pendingOrder) ?? m_LastRequestedProductId;
 
-        //Add the purchased product to the players inventory
-        if (product.definition.id == goldProductId1)
+        if (purchasedProductId == goldProductId1)
         {
             Add500Gold();
         }
-        else if (product.definition.id == goldProductId2)
+        else if (purchasedProductId == goldProductId2)
         {
             Add1000Gold();
         }
-        else if (product.definition.id == goldProductId3)
+        else if (purchasedProductId == goldProductId3)
         {
             Add2500Gold();
         }
-        else if (product.definition.id == goldProductId4)
+        else if (purchasedProductId == goldProductId4)
         {
             Add5000Gold();
         }
-        else if (product.definition.id == removeAdsProductId)
+        else if (purchasedProductId == removeAdsProductId)
         {
             DisableAds();
         }
 
-        Debug.Log($"Purchase Complete - Product: {product.definition.id}");
+        Debug.Log($"Purchase Complete - Product: {purchasedProductId}");
 
-        //We return Complete, informing IAP that the processing on our side is done and the transaction can be closed.
-        return PurchaseProcessingResult.Complete;
+        m_StoreController.ConfirmPurchase(pendingOrder);
+        m_LastRequestedProductId = null;
     }
 
-    public void OnPurchaseFailed(Product product, PurchaseFailureReason failureReason)
+    void OnPurchaseFailed(FailedOrder failedOrder)
     {
-        Debug.Log($"Purchase failed - Product: '{product.definition.id}', PurchaseFailureReason: {failureReason}");
+        Debug.Log($"Purchase failed. Reason: {failedOrder.FailureReason}");
+        m_LastRequestedProductId = null;
     }
 
-    public void OnPurchaseFailed(Product product, PurchaseFailureDescription failureDescription)
+    string TryExtractProductIdFromOrder(object order)
     {
-        Debug.Log($"Purchase failed - Product: '{product.definition.id}'," +
-            $" Purchase failure reason: {failureDescription.reason}," +
-            $" Purchase failure details: {failureDescription.message}");
+        if (order == null)
+        {
+            return null;
+        }
+
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public;
+
+        object info = order.GetType().GetProperty("Info", flags)?.GetValue(order);
+        object cartOrdered = info?.GetType().GetProperty("CartOrdered", flags)?.GetValue(info);
+        IEnumerable<object> items = cartOrdered?.GetType().GetMethod("Items", flags)?.Invoke(cartOrdered, null) as IEnumerable<object>;
+
+        if (items == null)
+        {
+            return null;
+        }
+
+        foreach (object item in items)
+        {
+            object product = item?.GetType().GetProperty("Product", flags)?.GetValue(item);
+            object definition = product?.GetType().GetProperty("definition", flags)?.GetValue(product)
+                ?? product?.GetType().GetProperty("Definition", flags)?.GetValue(product);
+
+            string productId = definition?.GetType().GetProperty("id", flags)?.GetValue(definition) as string
+                ?? definition?.GetType().GetProperty("Id", flags)?.GetValue(definition) as string;
+
+            if (!string.IsNullOrEmpty(productId))
+            {
+                return productId;
+            }
+        }
+
+        return null;
+    }
+
+    bool ContainsProductInOrderCollection(object orders, string productId)
+    {
+        if (orders == null || string.IsNullOrEmpty(productId))
+        {
+            return false;
+        }
+
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public;
+        IEnumerable<object> confirmedOrders = orders.GetType().GetMethod("ConfirmedOrders", flags)?.Invoke(orders, null) as IEnumerable<object>;
+
+        if (confirmedOrders == null)
+        {
+            return false;
+        }
+
+        foreach (object confirmedOrder in confirmedOrders)
+        {
+            if (TryExtractProductIdFromOrder(confirmedOrder) == productId)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public void Add500Gold()
     {
-        Debug.Log("adding 500 gold");
         premiumManager.UpdatePremium(500);
         gameController.SaveData();
     }
@@ -193,7 +246,21 @@ public class IAPManager : MonoBehaviour, IDetailedStoreListener
     {
         adHandler.noAds = true;
         options.DisableButton();
-        // buyButton.interactable = false;
     }
 
+    void OnDestroy()
+    {
+        if (m_StoreController == null)
+        {
+            return;
+        }
+
+        m_StoreController.OnPurchasePending -= OnPurchasePending;
+        m_StoreController.OnPurchaseFailed -= OnPurchaseFailed;
+        m_StoreController.OnProductsFetched -= OnProductsFetched;
+        m_StoreController.OnProductsFetchFailed -= OnProductsFetchFailed;
+        m_StoreController.OnPurchasesFetched -= OnPurchasesFetched;
+        m_StoreController.OnPurchasesFetchFailed -= OnPurchasesFetchFailed;
+        m_StoreController.OnStoreDisconnected -= OnStoreDisconnected;
+    }
 }
