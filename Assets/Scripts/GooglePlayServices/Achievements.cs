@@ -1,112 +1,84 @@
 using System.Collections;
-using System.Collections.Generic;
-using UnityEngine;
 using GooglePlayGames;
-using UnityEngine.SocialPlatforms;
-using System.Linq;
+using GooglePlayGames.BasicApi;
+using UnityEngine;
 
 public class Achievements : MonoBehaviour
 {
-    // Start is called before the first frame update
-    void Start()
-    {
- 
-    }
-
-    
     public IEnumerator WaitAndUnlock(string achievementID)
     {
         yield return new WaitForSeconds(2f);
         UnlockAchievement(achievementID);
     }
 
-
     public void IncrementAchievement(string achievementID)
     {
-        // load achievements
-        Social.LoadAchievements(achievements =>
+        if (!IsAuthenticated())
         {
-            if (achievements == null)
-            {
-                Debug.Log("no achievements loaded");
-                return;
-            }
-            // find the specified achievement
-            var achievement = achievements.FirstOrDefault(a => a.id == achievementID);
+            Debug.LogWarning("IncrementAchievement skipped. User is not authenticated.");
+            return;
+        }
 
-            // check if the achievement is unlocked
-            if (achievement == null || achievement.completed)
+        PlayGamesPlatform.Instance.IncrementAchievement(achievementID, 1, success =>
+        {
+            if (!success)
             {
-                Debug.Log("incremental achievement already unlocked");
-                return;
+                Debug.LogWarning("IncrementAchievement failed for: " + achievementID);
             }
-            // increment the achievement
-            PlayGamesPlatform.Instance.IncrementAchievement(
-                achievementID,
-                1,
-                success =>
-                {
-                    // handle success or failure
-                }
-            );
         });
     }
 
     public void VerifyAchievement(string achievementID)
     {
-        if (Social.localUser.authenticated)
+        if (IsAuthenticated())
         {
-            // The local user is already authenticated
-            Debug.Log("The local user is already authenticated.");
             UnlockAchievement(achievementID);
             return;
         }
 
-        // Authenticate the local user
-        Social.localUser.Authenticate(success => {
-            if (success)
+        PlayGamesPlatform.Instance.Authenticate(signInStatus =>
+        {
+            if (signInStatus == SignInStatus.Success)
             {
-                // Check which Weapons have been purchased and verify the achievement
                 UnlockAchievement(achievementID);
+            }
+            else
+            {
+                Debug.LogWarning("User authentication failed while verifying achievement. Status: " + signInStatus);
             }
         });
     }
-
 
     public void UnlockAchievement(string achievementID)
     {
-        // load achievements
-        Social.LoadAchievements(achievements =>
+        if (!IsAuthenticated())
         {
-            if (achievements == null)
-            {
-                Debug.Log("no achievements loaded");
-                return;
-            }
-            // find the specified achievement
-            var achievement = achievements.FirstOrDefault(a => a.id == achievementID);
+            Debug.LogWarning("UnlockAchievement skipped. User is not authenticated.");
+            return;
+        }
 
-            // check if the achievement is unlocked
-            if (achievement == null || achievement.completed)
+        PlayGamesPlatform.Instance.ReportProgress(achievementID, 100.0f, success =>
+        {
+            if (!success)
             {
-                Debug.Log("one off achievement already unlocked");
-                return;
+                Debug.LogWarning("UnlockAchievement failed for: " + achievementID);
             }
-            // unlock achievement (achievement ID "Cfjewijawiu_QA")
-            Social.ReportProgress(achievementID, 100.0f, (bool success) =>
-            {
-                // handle success or failure
-            }
-            );
         });
     }
 
-
     public void ShowAchievements()
     {
-        // show achievements UI
-        Debug.Log("Show Achievements");
-        Social.ShowAchievementsUI();
+        if (!IsAuthenticated())
+        {
+            Debug.LogWarning("ShowAchievements skipped. User is not authenticated.");
+            return;
+        }
+
+        PlayGamesPlatform.Instance.ShowAchievementsUI();
     }
 
+    bool IsAuthenticated()
+    {
+        return PlayGamesPlatform.Instance != null && PlayGamesPlatform.Instance.IsAuthenticated();
+    }
 }

@@ -91,7 +91,7 @@ public class GameController : MonoBehaviour
 
         SetWeapons();
 
-        HandleUpgrade[] handleUpgradesList = FindObjectsOfType<HandleUpgrade>();
+        HandleUpgrade[] handleUpgradesList = FindObjectsByType<HandleUpgrade>(FindObjectsSortMode.None);
         foreach(HandleUpgrade handleUpgrade in handleUpgradesList)
         {
             handleUpgrade.baseLevel = 1;
@@ -99,7 +99,7 @@ public class GameController : MonoBehaviour
             handleUpgrade.button.interactable = true;
         }
 
-        HandlePremiumUpgrade[] handlePremiumUpgradesList = FindObjectsOfType<HandlePremiumUpgrade>();
+        HandlePremiumUpgrade[] handlePremiumUpgradesList = FindObjectsByType<HandlePremiumUpgrade>(FindObjectsSortMode.None);
         foreach(HandlePremiumUpgrade handlePremiumUpgrade in handlePremiumUpgradesList)
         {
             // handlePremiumUpgrade.upgradeLevel = 1;

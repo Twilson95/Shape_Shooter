@@ -1,16 +1,16 @@
-using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Purchasing;
-using UnityEngine.Purchasing.Extension;
 using UnityEngine.UI;
 
 namespace Samples.Purchasing.Core.BuyingConsumables
 {
-    public class BuyingConsumables : MonoBehaviour, IDetailedStoreListener
+    public class BuyingConsumables : MonoBehaviour
     {
-        IStoreController m_StoreController; // The Unity Purchasing system.
+        StoreController m_StoreController;
 
-        //Your products IDs. They should match the ids of your products in your store.
+        // Your products IDs. They should match the ids of your products in your store.
         public string goldProductId = "com.mycompany.mygame.gold1";
         public string diamondProductId = "com.mycompany.mygame.diamond1";
 
@@ -19,88 +19,96 @@ namespace Samples.Purchasing.Core.BuyingConsumables
 
         int m_GoldCount;
         int m_DiamondCount;
+        string m_LastRequestedProductId;
 
-        void Start()
+        async void Start()
         {
-            InitializePurchasing();
+            await InitializePurchasing();
             UpdateUI();
         }
 
-        void InitializePurchasing()
+        async Task InitializePurchasing()
         {
-            var builder = ConfigurationBuilder.Instance(StandardPurchasingModule.Instance());
+            m_StoreController = UnityIAPServices.StoreController();
 
-            //Add products that will be purchasable and indicate its type.
-            builder.AddProduct(goldProductId, ProductType.Consumable);
-            builder.AddProduct(diamondProductId, ProductType.Consumable);
+            m_StoreController.OnPurchasePending += OnPurchasePending;
+            m_StoreController.OnPurchaseFailed += OnPurchaseFailed;
+            m_StoreController.OnProductsFetched += OnProductsFetched;
+            m_StoreController.OnProductsFetchFailed += OnProductsFetchFailed;
+            m_StoreController.OnPurchasesFetched += OnPurchasesFetched;
+            m_StoreController.OnPurchasesFetchFailed += OnPurchasesFetchFailed;
+            m_StoreController.OnStoreDisconnected += OnStoreDisconnected;
 
-            UnityPurchasing.Initialize(this, builder);
+            await m_StoreController.Connect();
+
+            var initialProductsToFetch = new List<ProductDefinition>
+            {
+                new(goldProductId, ProductType.Consumable),
+                new(diamondProductId, ProductType.Consumable)
+            };
+
+            m_StoreController.FetchProducts(initialProductsToFetch);
         }
 
         public void BuyGold()
         {
-            m_StoreController.InitiatePurchase(goldProductId);
+            m_LastRequestedProductId = goldProductId;
+            m_StoreController?.PurchaseProduct(goldProductId);
         }
 
         public void BuyDiamond()
         {
-            m_StoreController.InitiatePurchase(diamondProductId);
+            m_LastRequestedProductId = diamondProductId;
+            m_StoreController?.PurchaseProduct(diamondProductId);
         }
 
-        public void OnInitialized(IStoreController controller, IExtensionProvider extensions)
+        void OnProductsFetched(List<Product> products)
         {
-            Debug.Log("In-App Purchasing successfully initialized");
-            m_StoreController = controller;
+            Debug.Log($"IAP products fetched: {products.Count}");
+            m_StoreController.FetchPurchases();
         }
 
-        public void OnInitializeFailed(InitializationFailureReason error)
+        void OnProductsFetchFailed(ProductFetchFailed failure)
         {
-            OnInitializeFailed(error, null);
+            Debug.Log($"Failed to fetch products. Reason: {failure.FailureReason}");
         }
 
-        public void OnInitializeFailed(InitializationFailureReason error, string message)
+        void OnPurchasesFetched(Orders orders)
         {
-            var errorMessage = $"Purchasing failed to initialize. Reason: {error}.";
-
-            if (message != null)
-            {
-                errorMessage += $" More details: {message}";
-            }
-
-            Debug.Log(errorMessage);
+            Debug.Log("Purchases fetched.");
         }
 
-        public PurchaseProcessingResult ProcessPurchase(PurchaseEventArgs args)
+        void OnPurchasesFetchFailed(PurchasesFetchFailureDescription failure)
         {
-            //Retrieve the purchased product
-            var product = args.purchasedProduct;
+            Debug.Log($"Failed to fetch purchases. Reason: {failure.FailureReason}");
+        }
 
-            //Add the purchased product to the players inventory
-            if (product.definition.id == goldProductId)
+        void OnStoreDisconnected(StoreConnectionFailureDescription failure)
+        {
+            Debug.Log($"Store disconnected. Reason: {failure.FailureReason}");
+        }
+
+        void OnPurchasePending(PendingOrder pendingOrder)
+        {
+            if (m_LastRequestedProductId == goldProductId)
             {
                 AddGold();
             }
-            else if (product.definition.id == diamondProductId)
+            else if (m_LastRequestedProductId == diamondProductId)
             {
                 AddDiamond();
             }
 
-            Debug.Log($"Purchase Complete - Product: {product.definition.id}");
+            Debug.Log($"Purchase Complete - Product: {m_LastRequestedProductId}");
 
-            //We return Complete, informing IAP that the processing on our side is done and the transaction can be closed.
-            return PurchaseProcessingResult.Complete;
+            m_StoreController.ConfirmPurchase(pendingOrder);
+            m_LastRequestedProductId = null;
         }
 
-        public void OnPurchaseFailed(Product product, PurchaseFailureReason failureReason)
+        void OnPurchaseFailed(FailedOrder failedOrder)
         {
-            Debug.Log($"Purchase failed - Product: '{product.definition.id}', PurchaseFailureReason: {failureReason}");
-        }
-
-        public void OnPurchaseFailed(Product product, PurchaseFailureDescription failureDescription)
-        {
-            Debug.Log($"Purchase failed - Product: '{product.definition.id}'," +
-                $" Purchase failure reason: {failureDescription.reason}," +
-                $" Purchase failure details: {failureDescription.message}");
+            Debug.Log($"Purchase failed. Reason: {failedOrder.FailureReason}");
+            m_LastRequestedProductId = null;
         }
 
         void AddGold()
@@ -119,6 +127,22 @@ namespace Samples.Purchasing.Core.BuyingConsumables
         {
             GoldCountText.text = $"Your Gold: {m_GoldCount}";
             DiamondCountText.text = $"Your Diamonds: {m_DiamondCount}";
+        }
+
+        void OnDestroy()
+        {
+            if (m_StoreController == null)
+            {
+                return;
+            }
+
+            m_StoreController.OnPurchasePending -= OnPurchasePending;
+            m_StoreController.OnPurchaseFailed -= OnPurchaseFailed;
+            m_StoreController.OnProductsFetched -= OnProductsFetched;
+            m_StoreController.OnProductsFetchFailed -= OnProductsFetchFailed;
+            m_StoreController.OnPurchasesFetched -= OnPurchasesFetched;
+            m_StoreController.OnPurchasesFetchFailed -= OnPurchasesFetchFailed;
+            m_StoreController.OnStoreDisconnected -= OnStoreDisconnected;
         }
     }
 }
