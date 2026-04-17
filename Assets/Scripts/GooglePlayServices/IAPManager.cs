@@ -40,6 +40,7 @@ public class IAPManager : MonoBehaviour
         m_StoreController.OnProductsFetchFailed += OnProductsFetchFailed;
         m_StoreController.OnPurchasesFetched += OnPurchasesFetched;
         m_StoreController.OnPurchasesFetchFailed += OnPurchasesFetchFailed;
+        m_StoreController.OnStoreConnected += OnStoreConnected;
         m_StoreController.OnStoreDisconnected += OnStoreDisconnected;
 
         await m_StoreController.Connect();
@@ -117,6 +118,11 @@ public class IAPManager : MonoBehaviour
     void OnStoreDisconnected(StoreConnectionFailureDescription failure)
     {
         Debug.Log($"Store disconnected. Reason: {failure.Message}");
+    }
+
+    void OnStoreConnected()
+    {
+        Debug.Log("Store connected.");
     }
 
     void OnPurchasePending(PendingOrder pendingOrder)
@@ -261,6 +267,7 @@ public class IAPManager : MonoBehaviour
         m_StoreController.OnProductsFetchFailed -= OnProductsFetchFailed;
         m_StoreController.OnPurchasesFetched -= OnPurchasesFetched;
         m_StoreController.OnPurchasesFetchFailed -= OnPurchasesFetchFailed;
+        m_StoreController.OnStoreConnected -= OnStoreConnected;
         m_StoreController.OnStoreDisconnected -= OnStoreDisconnected;
     }
 }
