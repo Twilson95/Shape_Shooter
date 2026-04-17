@@ -28,7 +28,7 @@ public class GoogleSignIn : MonoBehaviour
 
     private void CachePlayGamesPlatformApi()
     {
-        Type playGamesPlatformType = Type.GetType("GooglePlayGames.PlayGamesPlatform, GooglePlayGames");
+        Type playGamesPlatformType = ResolvePlayGamesPlatformType();
         if (playGamesPlatformType == null)
         {
             Error = "Google Play Games plugin not found.";
@@ -52,7 +52,20 @@ public class GoogleSignIn : MonoBehaviour
                 return parameters.Length > 0 && typeof(Delegate).IsAssignableFrom(parameters[0].ParameterType);
             });
 
-        requestServerSideAccessMethod = playGamesPlatformType.GetMethod("RequestServerSideAccess", new[] { typeof(bool), typeof(Action<string>) });
+        requestServerSideAccessMethod = playGamesPlatformType
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
+            .FirstOrDefault(method =>
+            {
+                if (method.Name != "RequestServerSideAccess")
+                {
+                    return false;
+                }
+
+                ParameterInfo[] parameters = method.GetParameters();
+                return parameters.Length > 1
+                    && parameters[0].ParameterType == typeof(bool)
+                    && typeof(Delegate).IsAssignableFrom(parameters[1].ParameterType);
+            });
     }
 
     private void ActivatePlayGamesPlatformIfAvailable()
@@ -105,6 +118,39 @@ public class GoogleSignIn : MonoBehaviour
         return arguments;
     }
 
+    private Type ResolvePlayGamesPlatformType()
+    {
+        string[] possibleTypeNames =
+        {
+            "GooglePlayGames.PlayGamesPlatform",
+            "Google.Play.Games.PlayGamesPlatform"
+        };
+
+        foreach (string typeName in possibleTypeNames)
+        {
+            Type resolvedType = Type.GetType(typeName);
+            if (resolvedType != null)
+            {
+                return resolvedType;
+            }
+        }
+
+        Assembly[] loadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
+        foreach (Assembly assembly in loadedAssemblies)
+        {
+            foreach (string typeName in possibleTypeNames)
+            {
+                Type resolvedType = assembly.GetType(typeName);
+                if (resolvedType != null)
+                {
+                    return resolvedType;
+                }
+            }
+        }
+
+        return null;
+    }
+
     private Delegate BuildAuthenticationCallback(Type callbackType)
     {
         Type[] genericArgs = callbackType.GenericTypeArguments;
@@ -150,16 +196,21 @@ public class GoogleSignIn : MonoBehaviour
             Debug.LogWarning(Error);
             return;
         }
-
-        requestServerSideAccessMethod.Invoke(playGamesPlatformInstance, new object[]
+        
+        Action<string> serverAuthCodeCallback = code =>
         {
-            true,
-            new Action<string>(code =>
-            {
-                Debug.Log("Authorization code: " + code);
-                Token = code;
-            })
-        });
+            Debug.Log("Authorization code: " + code);
+            Token = code;
+        };
+
+        object[] arguments = BuildMethodArguments(
+            requestServerSideAccessMethod,
+            serverAuthCodeCallback
+        );
+        arguments[0] = true;
+
+        object target = requestServerSideAccessMethod.IsStatic ? null : playGamesPlatformInstance;
+        requestServerSideAccessMethod.Invoke(target, arguments);
     }
 
     // sign in a returning player or create new player
