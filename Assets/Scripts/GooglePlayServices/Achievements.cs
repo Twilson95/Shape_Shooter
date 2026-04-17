@@ -1,5 +1,5 @@
 using System.Collections;
-using System.Linq;
+using GooglePlayGames;
 using UnityEngine;
 using UnityEngine.SocialPlatforms;
 
@@ -13,37 +13,18 @@ public class Achievements : MonoBehaviour
 
     public void IncrementAchievement(string achievementID)
     {
-        Social.LoadAchievements(achievements =>
+        if (!Social.localUser.authenticated)
         {
-            if (achievements == null)
-            {
-                Debug.LogWarning("Achievements could not be loaded.");
-                return;
-            }
+            Debug.LogWarning("IncrementAchievement skipped. User is not authenticated.");
+            return;
+        }
 
-            var achievement = achievements.FirstOrDefault(a => a.id == achievementID);
-            if (achievement == null)
+        PlayGamesPlatform.Instance.IncrementAchievement(achievementID, 1, success =>
+        {
+            if (!success)
             {
-                Debug.LogWarning("Achievement not found: " + achievementID);
-                return;
+                Debug.LogWarning("IncrementAchievement failed for: " + achievementID);
             }
-
-            if (achievement.completed)
-            {
-                Debug.Log("Increment skipped. Achievement already completed: " + achievementID);
-                return;
-            }
-
-            // Cross-platform API: increase progress by 1 percentage point.
-            // For step-based achievements, configure total steps accordingly in Play Console.
-            double nextProgress = Mathf.Clamp((float)achievement.percentCompleted + 1f, 0f, 100f);
-            Social.ReportProgress(achievementID, nextProgress, success =>
-            {
-                if (!success)
-                {
-                    Debug.LogWarning("IncrementAchievement failed for: " + achievementID);
-                }
-            });
         });
     }
 
@@ -70,39 +51,29 @@ public class Achievements : MonoBehaviour
 
     public void UnlockAchievement(string achievementID)
     {
-        Social.LoadAchievements(achievements =>
+        if (!Social.localUser.authenticated)
         {
-            if (achievements == null)
-            {
-                Debug.LogWarning("Achievements could not be loaded.");
-                return;
-            }
+            Debug.LogWarning("UnlockAchievement skipped. User is not authenticated.");
+            return;
+        }
 
-            var achievement = achievements.FirstOrDefault(a => a.id == achievementID);
-            if (achievement == null)
+        Social.ReportProgress(achievementID, 100.0f, success =>
+        {
+            if (!success)
             {
-                Debug.LogWarning("Achievement not found: " + achievementID);
-                return;
+                Debug.LogWarning("UnlockAchievement failed for: " + achievementID);
             }
-
-            if (achievement.completed)
-            {
-                Debug.Log("Unlock skipped. Achievement already completed: " + achievementID);
-                return;
-            }
-
-            Social.ReportProgress(achievementID, 100.0f, success =>
-            {
-                if (!success)
-                {
-                    Debug.LogWarning("UnlockAchievement failed for: " + achievementID);
-                }
-            });
         });
     }
 
     public void ShowAchievements()
     {
+        if (!Social.localUser.authenticated)
+        {
+            Debug.LogWarning("ShowAchievements skipped. User is not authenticated.");
+            return;
+        }
+
         Social.ShowAchievementsUI();
     }
 }
