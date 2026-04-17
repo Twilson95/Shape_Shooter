@@ -150,7 +150,7 @@ public class GoogleSignIn : MonoBehaviour
         {
             Debug.LogException(ex);
         }
-        catch (RequestFailedException ex)
+        catch (Exception ex)
         {
             Debug.LogException(ex);
         }
@@ -172,7 +172,7 @@ public class GoogleSignIn : MonoBehaviour
         {
             Debug.LogException(ex);
         }
-        catch (RequestFailedException ex)
+        catch (Exception ex)
         {
             Debug.LogException(ex);
         }
