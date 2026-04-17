@@ -23,6 +23,12 @@ public class GoogleSignIn : MonoBehaviour
         CachePlayGamesPlatformApi();
         ActivatePlayGamesPlatformIfAvailable();
 
+        if (!IsPlayGamesAuthenticationSupportedOnCurrentPlatform())
+        {
+            Debug.LogWarning("Google Play Games authentication is only supported on Android device builds. Editor/PC uses DummyClient and will not sign in.");
+            return;
+        }
+
         LoginGooglePlayGames();
     }
 
@@ -173,12 +179,19 @@ public class GoogleSignIn : MonoBehaviour
 
     private void HandleAuthenticateResult<T>(T authResult)
     {
+        string statusText = authResult?.ToString() ?? "Unknown";
         bool isSuccess = authResult is bool boolResult
             ? boolResult
-            : string.Equals(authResult?.ToString(), "Success", StringComparison.OrdinalIgnoreCase);
+            : string.Equals(statusText, "Success", StringComparison.OrdinalIgnoreCase);
 
         if (!isSuccess)
         {
+            if (string.Equals(statusText, "Canceled", StringComparison.OrdinalIgnoreCase))
+            {
+                Debug.LogWarning("Google Play Games sign-in was canceled. In Unity Editor/PC this is expected because DummyClient is used. Test on an Android device with configured credentials.");
+                return;
+            }
+
             Error = "Failed to authenticate with Google Play Games. Status: " + authResult;
             Debug.LogError(Error);
             return;
@@ -211,6 +224,15 @@ public class GoogleSignIn : MonoBehaviour
 
         object target = requestServerSideAccessMethod.IsStatic ? null : playGamesPlatformInstance;
         requestServerSideAccessMethod.Invoke(target, arguments);
+    }
+
+    private bool IsPlayGamesAuthenticationSupportedOnCurrentPlatform()
+    {
+#if UNITY_ANDROID && !UNITY_EDITOR
+        return true;
+#else
+        return false;
+#endif
     }
 
     // sign in a returning player or create new player
