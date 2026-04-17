@@ -1,10 +1,9 @@
 using System;
+using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using Unity.Services.Authentication;
-using Unity.Services.Core;
 using UnityEngine;
-using UnityEngine.SocialPlatforms;
 
 public class GoogleSignIn : MonoBehaviour
 {
@@ -13,6 +12,7 @@ public class GoogleSignIn : MonoBehaviour
     public bool testBool = false;
 
     private object playGamesPlatformInstance;
+    private MethodInfo authenticateMethod;
     private MethodInfo requestServerSideAccessMethod;
 
     void Awake()
@@ -31,13 +31,27 @@ public class GoogleSignIn : MonoBehaviour
         Type playGamesPlatformType = Type.GetType("GooglePlayGames.PlayGamesPlatform, GooglePlayGames");
         if (playGamesPlatformType == null)
         {
-            Error = "Google Play Games plugin not found. Sign-in will use Social API only.";
+            Error = "Google Play Games plugin not found.";
             Debug.LogWarning(Error);
             return;
         }
 
         PropertyInfo instanceProperty = playGamesPlatformType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
         playGamesPlatformInstance = instanceProperty?.GetValue(null);
+
+        authenticateMethod = playGamesPlatformType
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .FirstOrDefault(method =>
+            {
+                if (method.Name != "Authenticate")
+                {
+                    return false;
+                }
+
+                ParameterInfo[] parameters = method.GetParameters();
+                return parameters.Length == 1 && typeof(Delegate).IsAssignableFrom(parameters[0].ParameterType);
+            });
+
         requestServerSideAccessMethod = playGamesPlatformType.GetMethod("RequestServerSideAccess", new[] { typeof(bool), typeof(Action<string>) });
     }
 
@@ -55,18 +69,53 @@ public class GoogleSignIn : MonoBehaviour
 
     public void LoginGooglePlayGames()
     {
-        Social.localUser.Authenticate(success =>
+        if (playGamesPlatformInstance == null || authenticateMethod == null)
         {
-            if (!success)
-            {
-                Error = "Failed to authenticate with Google Play Games.";
-                Debug.LogError(Error);
-                return;
-            }
+            Error = "Authenticate API not found on installed Google Play Games plugin.";
+            Debug.LogError(Error);
+            return;
+        }
 
-            Debug.Log("Login with Google Play Games successful.");
-            RequestServerSideAccessCode();
-        });
+        Type callbackType = authenticateMethod.GetParameters()[0].ParameterType;
+        Delegate callbackDelegate = BuildAuthenticationCallback(callbackType);
+        authenticateMethod.Invoke(playGamesPlatformInstance, new object[] { callbackDelegate });
+    }
+
+    private Delegate BuildAuthenticationCallback(Type callbackType)
+    {
+        Type[] genericArgs = callbackType.GenericTypeArguments;
+        if (genericArgs.Length != 1)
+        {
+            throw new InvalidOperationException("Unexpected Authenticate callback signature.");
+        }
+
+        MethodInfo handler = GetType()
+            .GetMethod(nameof(HandleAuthenticateResult), BindingFlags.Instance | BindingFlags.NonPublic)
+            ?.MakeGenericMethod(genericArgs[0]);
+
+        if (handler == null)
+        {
+            throw new InvalidOperationException("Unable to build Authenticate callback delegate.");
+        }
+
+        return Delegate.CreateDelegate(callbackType, this, handler);
+    }
+
+    private void HandleAuthenticateResult<T>(T authResult)
+    {
+        bool isSuccess = authResult is bool boolResult
+            ? boolResult
+            : string.Equals(authResult?.ToString(), "Success", StringComparison.OrdinalIgnoreCase);
+
+        if (!isSuccess)
+        {
+            Error = "Failed to authenticate with Google Play Games. Status: " + authResult;
+            Debug.LogError(Error);
+            return;
+        }
+
+        Debug.Log("Login with Google Play Games successful.");
+        RequestServerSideAccessCode();
     }
 
     private void RequestServerSideAccessCode()
