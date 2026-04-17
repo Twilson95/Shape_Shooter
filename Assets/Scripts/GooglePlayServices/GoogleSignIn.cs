@@ -40,7 +40,7 @@ public class GoogleSignIn : MonoBehaviour
         playGamesPlatformInstance = instanceProperty?.GetValue(null);
 
         authenticateMethod = playGamesPlatformType
-            .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
             .FirstOrDefault(method =>
             {
                 if (method.Name != "Authenticate")
@@ -49,7 +49,7 @@ public class GoogleSignIn : MonoBehaviour
                 }
 
                 ParameterInfo[] parameters = method.GetParameters();
-                return parameters.Length == 1 && typeof(Delegate).IsAssignableFrom(parameters[0].ParameterType);
+                return parameters.Length > 0 && typeof(Delegate).IsAssignableFrom(parameters[0].ParameterType);
             });
 
         requestServerSideAccessMethod = playGamesPlatformType.GetMethod("RequestServerSideAccess", new[] { typeof(bool), typeof(Action<string>) });
@@ -78,7 +78,31 @@ public class GoogleSignIn : MonoBehaviour
 
         Type callbackType = authenticateMethod.GetParameters()[0].ParameterType;
         Delegate callbackDelegate = BuildAuthenticationCallback(callbackType);
-        authenticateMethod.Invoke(playGamesPlatformInstance, new object[] { callbackDelegate });
+        object[] arguments = BuildMethodArguments(authenticateMethod, callbackDelegate);
+        object target = authenticateMethod.IsStatic ? null : playGamesPlatformInstance;
+        authenticateMethod.Invoke(target, arguments);
+    }
+
+    private object[] BuildMethodArguments(MethodInfo method, Delegate firstArgument)
+    {
+        ParameterInfo[] parameters = method.GetParameters();
+        object[] arguments = new object[parameters.Length];
+        arguments[0] = firstArgument;
+
+        for (int i = 1; i < parameters.Length; i++)
+        {
+            ParameterInfo parameter = parameters[i];
+            if (parameter.HasDefaultValue)
+            {
+                arguments[i] = parameter.DefaultValue;
+                continue;
+            }
+
+            Type parameterType = parameter.ParameterType;
+            arguments[i] = parameterType.IsValueType ? Activator.CreateInstance(parameterType) : null;
+        }
+
+        return arguments;
     }
 
     private Delegate BuildAuthenticationCallback(Type callbackType)
