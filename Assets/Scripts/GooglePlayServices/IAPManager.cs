@@ -116,7 +116,7 @@ public class IAPManager : MonoBehaviour
 
     void OnStoreDisconnected(StoreConnectionFailureDescription failure)
     {
-        Debug.Log($"Store disconnected. Reason: {failure.FailureReason}");
+        Debug.Log($"Store disconnected. Reason: {failure.Message}");
     }
 
     void OnPurchasePending(PendingOrder pendingOrder)

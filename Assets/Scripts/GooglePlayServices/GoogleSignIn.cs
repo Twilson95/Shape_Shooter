@@ -3,7 +3,6 @@ using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using Unity.Services.Authentication;
-using Unity.Services.Core;
 using UnityEngine;
 
 public class GoogleSignIn : MonoBehaviour
@@ -151,7 +150,7 @@ public class GoogleSignIn : MonoBehaviour
         {
             Debug.LogException(ex);
         }
-        catch (RequestFailedException ex)
+        catch (Exception ex)
         {
             Debug.LogException(ex);
         }
@@ -173,7 +172,7 @@ public class GoogleSignIn : MonoBehaviour
         {
             Debug.LogException(ex);
         }
-        catch (RequestFailedException ex)
+        catch (Exception ex)
         {
             Debug.LogException(ex);
         }
