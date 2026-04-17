@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -43,7 +44,7 @@ public class IAPManager : MonoBehaviour
         m_StoreController.OnStoreConnected += OnStoreConnected;
         m_StoreController.OnStoreDisconnected += OnStoreDisconnected;
 
-        await m_StoreController.Connect();
+        await ConnectStore();
 
         var initialProductsToFetch = new List<ProductDefinition>
         {
@@ -56,6 +57,96 @@ public class IAPManager : MonoBehaviour
 
         m_StoreController.FetchProducts(initialProductsToFetch);
         shopButton.interactable = true;
+    }
+
+    async Task ConnectStore()
+    {
+        MethodInfo connectWithCallbacks = m_StoreController
+            .GetType()
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .FirstOrDefault(method =>
+            {
+                if (method.Name != "Connect")
+                {
+                    return false;
+                }
+
+                ParameterInfo[] parameters = method.GetParameters();
+                return parameters.Length == 2
+                    && typeof(Delegate).IsAssignableFrom(parameters[0].ParameterType)
+                    && typeof(Delegate).IsAssignableFrom(parameters[1].ParameterType);
+            });
+
+        if (connectWithCallbacks != null)
+        {
+            ParameterInfo[] callbackParameters = connectWithCallbacks.GetParameters();
+            Delegate onConnected = CreateStoreCallbackDelegate(
+                callbackParameters[0].ParameterType,
+                nameof(HandleStoreConnectedNoArgs),
+                nameof(HandleStoreConnectedWithPayload)
+            );
+            Delegate onDisconnected = CreateStoreCallbackDelegate(
+                callbackParameters[1].ParameterType,
+                nameof(HandleStoreDisconnectedNoArgs),
+                nameof(HandleStoreDisconnectedWithPayload)
+            );
+
+            object connectResult = connectWithCallbacks.Invoke(m_StoreController, new object[] { onConnected, onDisconnected });
+            if (connectResult is Task connectTask)
+            {
+                await connectTask;
+            }
+            return;
+        }
+
+        await m_StoreController.Connect();
+    }
+
+    Delegate CreateStoreCallbackDelegate(Type delegateType, string noArgMethodName, string payloadMethodName)
+    {
+        MethodInfo invokeMethod = delegateType.GetMethod("Invoke");
+        ParameterInfo[] parameters = invokeMethod?.GetParameters();
+
+        if (parameters == null || parameters.Length == 0)
+        {
+            return Delegate.CreateDelegate(
+                delegateType,
+                this,
+                GetType().GetMethod(noArgMethodName, BindingFlags.Instance | BindingFlags.NonPublic)
+            );
+        }
+
+        return Delegate.CreateDelegate(
+            delegateType,
+            this,
+            GetType().GetMethod(payloadMethodName, BindingFlags.Instance | BindingFlags.NonPublic)
+        );
+    }
+
+    void HandleStoreConnectedNoArgs()
+    {
+        OnStoreConnected();
+    }
+
+    void HandleStoreConnectedWithPayload(object _)
+    {
+        OnStoreConnected();
+    }
+
+    void HandleStoreDisconnectedNoArgs()
+    {
+        Debug.Log("Store disconnected.");
+    }
+
+    void HandleStoreDisconnectedWithPayload(object payload)
+    {
+        if (payload is StoreConnectionFailureDescription failure)
+        {
+            OnStoreDisconnected(failure);
+            return;
+        }
+
+        Debug.Log($"Store disconnected. Reason: {payload}");
     }
 
     public void Buy500Gold()
