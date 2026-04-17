@@ -10,6 +10,49 @@ using UnityEngine.UI;
 
 public class IAPManager : MonoBehaviour
 {
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    static void RegisterStoreServiceCallbacksEarly()
+    {
+        MethodInfo storeServiceFactory = typeof(UnityIAPServices).GetMethod("StoreService", BindingFlags.Public | BindingFlags.Static);
+        object storeService = storeServiceFactory?.Invoke(null, null);
+        if (storeService == null)
+        {
+            return;
+        }
+
+        RegisterNoOpStoreCallback(storeService, "OnStoreConnected", nameof(NoOpStoreConnected), nameof(NoOpStoreConnectedWithPayload));
+        RegisterNoOpStoreCallback(storeService, "OnStoreDisconnected", nameof(NoOpStoreDisconnected), nameof(NoOpStoreDisconnectedWithPayload));
+    }
+
+    static void RegisterNoOpStoreCallback(object storeService, string eventName, string noArgMethodName, string payloadMethodName)
+    {
+        EventInfo callbackEvent = storeService.GetType().GetEvent(eventName, BindingFlags.Instance | BindingFlags.Public);
+        Type callbackType = callbackEvent?.EventHandlerType;
+        if (callbackType == null)
+        {
+            return;
+        }
+
+        MethodInfo invokeMethod = callbackType.GetMethod("Invoke");
+        int parameterCount = invokeMethod?.GetParameters().Length ?? 0;
+        MethodInfo callbackMethod = typeof(IAPManager).GetMethod(
+            parameterCount == 0 ? noArgMethodName : payloadMethodName,
+            BindingFlags.Static | BindingFlags.NonPublic
+        );
+        if (callbackMethod == null)
+        {
+            return;
+        }
+
+        Delegate callback = Delegate.CreateDelegate(callbackType, callbackMethod);
+        callbackEvent.AddEventHandler(storeService, callback);
+    }
+
+    static void NoOpStoreConnected() { }
+    static void NoOpStoreConnectedWithPayload(object _) { }
+    static void NoOpStoreDisconnected() { }
+    static void NoOpStoreDisconnectedWithPayload(object _) { }
+
     StoreController m_StoreController;
 
     // Your product IDs. They should match the IDs configured in your store dashboards.
